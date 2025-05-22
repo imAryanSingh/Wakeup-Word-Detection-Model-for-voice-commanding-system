@@ -1,0 +1,198 @@
+To run your program continuously for 3-4 hours in Jupyter or from the terminal, a few changes and steps will be necessary.
+
+1. Jupyter Notebook
+In a Jupyter notebook, you may want to ensure that the program runs uninterrupted for the desired duration. Jupyter Notebooks are designed for shorter code execution, but you can make it work for continuous running by ensuring no blocking or asynchronous tasks.
+
+Key adjustments:
+Since you need continuous processing for hours, a while loop will work well to keep the program running for the specified duration.
+Make sure the program doesn’t interact with the Jupyter Kernel in a blocking way (e.g., infinite loops or waiting for input in the notebook).
+Modifying the Code for Continuous Execution
+python
+Copy
+Edit
+import vosk
+import pyaudio
+import pyttsx3
+import json
+import os
+import time
+import datetime
+
+# Configuration
+MODEL_PATH = r"model_path"  # Specify the actual path to your Vosk model
+WAKE_WORDS_FILE = "wake_words.txt"
+OUTPUT_FILE_PATH = r"textfile.txt"
+SAMPLE_RATE = 16000
+CHUNK_SIZE = 4096
+INSTRUCTIONS_FILE = "instructions.txt"
+ACTIVE_TIMEOUT = 30  # Timeout in seconds (e.g., 30 seconds)
+
+# Initialize TTS engine and wake words
+engine = pyttsx3.init()
+engine.setProperty('rate', 150)
+
+# Initialize Vosk model and recognizer
+model = vosk.Model(MODEL_PATH)
+rec = vosk.KaldiRecognizer(model, SAMPLE_RATE)
+
+# Load wake words and instructions from files
+with open(WAKE_WORDS_FILE, 'r') as f:
+    WAKE_WORDS = [line.strip().lower() for line in f.readlines()]
+
+with open(INSTRUCTIONS_FILE, 'r') as f:
+    GENERAL_INSTRUCTIONS = [line.strip() for line in f.readlines()]
+
+# Initialize PyAudio for microphone input
+p = pyaudio.PyAudio()
+stream = p.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, input=True, frames_per_buffer=CHUNK_SIZE)
+
+# Flags for active mode and timeout
+active_mode = False
+active_start_time = None  # To store the time when active mode is entered
+
+def process_audio(data):
+    global active_mode, active_start_time
+
+    if rec.AcceptWaveform(data):
+        result = rec.Result()
+        if result:
+            try:
+                result_json = json.loads(result)
+                recognized_text = result_json.get("text", "").lower()
+                if recognized_text:
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with open(OUTPUT_FILE_PATH, 'a') as output_file:
+                        output_file.write(f"{timestamp}: {recognized_text}\n")
+                    print(f"{timestamp}: Recognized: {recognized_text}")
+
+                    for wake_word in WAKE_WORDS:
+                        if wake_word in recognized_text:
+                            print(f"{wake_word.capitalize()} detected!")
+                            engine.say(f"Hello! I am active. Here are some general instructions:")
+                            engine.runAndWait()
+                            for instruction in GENERAL_INSTRUCTIONS:
+                                engine.say(instruction)
+                                engine.runAndWait()
+                            active_mode = True
+                            active_start_time = time.time()  # Record the start time
+                            break  # Exit wake word loop after activation
+
+                if active_mode:
+                    # Check for timeout
+                    if time.time() - active_start_time > ACTIVE_TIMEOUT:
+                        print("Deactivating due to timeout...")
+                        engine.say("Deactivating due to inactivity.")
+                        engine.runAndWait()
+                        active_mode = False
+                        active_start_time = None  # Reset the start time
+                        rec.Reset()
+                    elif "help" in recognized_text:  # Keep help command
+                        print("Help command received")
+                        engine.say("I can help you with many things")
+                        engine.runAndWait()
+                    elif recognized_text != "":  # Echo back in active mode
+                        print("Command received in active mode")
+                        engine.say(f"You said: {recognized_text}")
+                        engine.runAndWait()
+
+                if "stop" in recognized_text and not active_mode:
+                    print("Stopping program...")
+                    return False
+
+            except json.JSONDecodeError:
+                print("Error decoding JSON result. Ignoring.")
+
+    return True
+
+# Main loop for 3-4 hours
+start_time = time.time()
+end_time = start_time + (4 * 60 * 60)  # 4 hours in seconds
+
+while time.time() < end_time:
+    data = stream.read(CHUNK_SIZE)
+    if not process_audio(data):
+        break
+
+# Cleanup after the program finishes
+stream.stop_stream()
+stream.close()
+p.terminate()
+print("Program finished.")
+Key Changes:
+Duration of execution: The program will run for 4 hours (set using end_time = start_time + (4 * 60 * 60)).
+Loop: The main loop (while time.time() < end_time) will keep the program running for the specified period.
+Microphone Input: The program reads from the microphone and processes audio in chunks.
+Running in Jupyter
+Simply copy and paste the modified code into a Jupyter cell and run it. However, Jupyter notebooks are not ideal for continuous operations like this.
+
+Note: In Jupyter, long-running processes may not behave optimally due to the way the notebook handles code execution.
+You might consider adding a time.sleep(1) in the main loop to reduce CPU usage.
+
+2. Running it from the Terminal (Recommended for 3-4 Hour Execution)
+To run this script in the terminal, follow these steps:
+
+Save your Python code in a .py file, for example: speech_recognition.py.
+
+Activate your virtual environment (if not already activated):
+
+powershell
+Copy
+Edit
+.\.venv\Scripts\activate
+Run the script:
+
+powershell
+Copy
+Edit
+python speech_recognition.py
+This will run the script for the specified duration (3-4 hours).
+
+Will it run continuously for 3-4 hours?
+Yes, it will run continuously for 3-4 hours. The program is designed to read microphone input and process audio in a loop. As long as the terminal session is active and the program is running, it will keep running for the given duration.
+
+Monitoring and Stopping the Program:
+Stopping manually: If you need to stop the program before the 3-4 hours are up, you can press Ctrl + C in the terminal.
+Monitoring: If you want to monitor the progress, you can add logging to track its behavior over time or check the output file (textfile.txt) for recognized text.
+Final Thoughts:
+Running this script in the terminal should work fine for 3-4 hours, as long as your system doesn't run into issues like memory overload or microphone access conflicts.
+####################################################################################
+Suggestions for Speed and Efficiency Improvements
+Threading for Continuous Audio Processing:
+
+The program currently runs in a blocking loop. You could use multithreading or asyncio to handle audio processing in parallel with other tasks (e.g., speech synthesis or timeout checks).
+Example:
+
+python
+Copy
+Edit
+import threading
+
+def continuous_audio_processing():
+    start_time = time.time()
+    end_time = start_time + (4 * 60 * 60)  # 4 hours in seconds
+    while time.time() < end_time:
+        data = stream.read(CHUNK_SIZE)
+        if not process_audio(data):
+            break
+
+# Run the audio processing in a separate thread
+audio_thread = threading.Thread(target=continuous_audio_processing)
+audio_thread.start()
+Reduce TTS Delay:
+
+Each time the engine speaks, there is a small delay (engine.runAndWait()).
+You can batch multiple speech commands and only call engine.runAndWait() once at the end of the speech queue to minimize this delay.
+Avoid Frequent File I/O:
+
+The program writes to the file every time speech is recognized. Writing to a file can be slow.
+Consider writing to a buffer in memory and flushing it to the file after a certain number of lines or after a fixed interval.
+Optimize Audio Chunk Size:
+
+The chunk size (CHUNK_SIZE) is currently set to 4096. You could experiment with reducing this value to get more frequent audio processing (but keep in mind that it can increase CPU usage).
+Use a More Efficient Wake Word Detection:
+
+Instead of checking each recognized text for a wake word every time, you could use a wake word detection model (e.g., snowboy or porcupine) that works in real-time and is more optimized for detecting wake words.
+Timeout Management:
+
+The ACTIVE_TIMEOUT check could be made more efficient by using an event-driven model instead of repeatedly checking in a blocking loop.
+By applying some of these changes, you can make the program run faster and more efficiently while maintaining continuous operation for extended periods like 3-4 hours.
